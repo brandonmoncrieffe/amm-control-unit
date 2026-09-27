@@ -464,6 +464,52 @@ static int stream_command(int argc, char **argv)
     return 0;
 }
 
+static int settarget_command(int argc, char **argv)
+{
+    int band_number;
+    float frequency_hz;
+
+    if (argc != 3 || !parse_integer(argv[1], &band_number) ||
+        !parse_float(argv[2], &frequency_hz) || band_number < 1 ||
+        band_number > (int)AUDIO_PROCESSING_TARGET_COUNT) {
+        printf("Usage: settarget <band 1-4> <hz>\n");
+        return 1;
+    }
+
+    const esp_err_t error = audio_processing_set_target_frequency(
+        (size_t)(band_number - 1), frequency_hz);
+    if (error != ESP_OK) {
+        printf("Failed to retarget band %d: %s\n", band_number,
+               esp_err_to_name(error));
+        return 1;
+    }
+
+    printf("Band %d now targets %.3f Hz\n", band_number, (double)frequency_hz);
+    return 0;
+}
+
+static int gettarget_command(int argc, char **argv)
+{
+    (void)argv;
+    if (argc != 1) {
+        printf("Usage: gettarget\n");
+        return 1;
+    }
+
+    for (size_t index = 0; index < AUDIO_PROCESSING_TARGET_COUNT; ++index) {
+        float frequency_hz = 0.0f;
+        const esp_err_t error =
+            audio_processing_get_target_frequency(index, &frequency_hz);
+        if (error != ESP_OK) {
+            printf("Failed to read band %u target: %s\n", (unsigned)(index + 1U),
+                   esp_err_to_name(error));
+            return 1;
+        }
+        printf("Band %u: %.3f Hz\n", (unsigned)(index + 1U), (double)frequency_hz);
+    }
+    return 0;
+}
+
 static int level_command(int argc, char **argv)
 {
     (void)argv;
@@ -563,6 +609,17 @@ static void register_console_commands(void)
             .help = "Capture original baseline or compare demo positions",
             .hint = "<1|2>",
             .func = &demo_command,
+        },
+        {
+            .command = "settarget",
+            .help = "Retarget a measured band to a new frequency to block",
+            .hint = "<band 1-4> <hz>",
+            .func = &settarget_command,
+        },
+        {
+            .command = "gettarget",
+            .help = "Show the current target frequency for every band",
+            .func = &gettarget_command,
         },
         {
             .command = "stream",

@@ -12,6 +12,12 @@ Owns ICS-43434 I2S acquisition, signed 24-bit sample conversion, DC removal,
 RMS calculation, Hann windowing, the 2048-point FFT, target-band integration,
 and a thread-safe latest-result snapshot.
 
+Each band's center frequency is mutable at runtime via
+`audio_processing_set_target_frequency()`/`_get_target_frequency()` — "which
+frequency should this band block" is an input, not a compile-time constant.
+A dedicated mutex guards just that array; the audio task copies it under lock
+once per block rather than holding the lock during FFT processing.
+
 The component uses the ESP-IDF 6 channel-based standard-I2S receive API at
 16 kHz with 32-bit left-channel slots. It invokes a short application callback
 after each non-overlapping block and otherwise has no dependency on the serial
@@ -44,11 +50,20 @@ open-loop length estimates.
 ### wifi_status_server (implemented)
 
 Owns a WiFi access point (`esp_wifi` AP mode) and an `esp_http_server`
-exposing two read-only JSON endpoints, `GET /state` and `GET /spectrum`, for
-the host-side live dashboard (see [`docs/visualization.md`](visualization.md)).
-It only calls `servo_control`'s and `audio_processing`'s existing public
-getters — it never commands a servo or configures audio acquisition — and is
-independent of the USB Serial/JTAG console, so both can run at once.
+exposing three endpoints, independent of the USB Serial/JTAG console so both
+can run at once:
+
+- `GET /state` and `GET /spectrum` (read-only), for the host-side live
+  dashboard (see [`docs/visualization.md`](visualization.md)). These only
+  call `servo_control`'s and `audio_processing`'s existing public getters —
+  `/state`'s reported `targets_hz` is read live via
+  `audio_processing_get_target_frequency()`, not a frozen copy of the config
+  it was started with, since `/target` (below) can change it after startup.
+- `POST /target?id=<1-4>&hz=<float>` (mutating) forwards to
+  `audio_processing_set_target_frequency()` — see
+  [`docs/acoustic-demo.md`](acoustic-demo.md)'s "Retargeting blocked
+  frequencies". Never touches a servo.
+
 SSID/password/channel are `Kconfig` options (`main/Kconfig.projbuild`), kept
 out of tracked source in the gitignored `sdkconfig`.
 

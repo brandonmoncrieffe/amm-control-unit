@@ -77,6 +77,22 @@ class Esp32Client:
         )
         return ControlUnitState(connected=True, servos=servos, audio=audio)
 
+    def set_target_frequency(self, target_id: int, frequency_hz: float) -> float | None:
+        """POST /target. Retargets which frequency band `target_id` (1-4)
+        measures — "block this frequency instead." Returns the frequency
+        actually applied, or None if the request failed/was rejected."""
+        try:
+            response = self._session.post(
+                f"{self._base_url}/target",
+                params={"id": target_id, "hz": frequency_hz},
+                timeout=REQUEST_TIMEOUT_SECONDS,
+            )
+            response.raise_for_status()
+            payload = response.json()
+        except (requests.RequestException, ValueError):
+            return None
+        return payload.get("hz")
+
     def fetch_spectrum(self) -> SpectrumState | None:
         try:
             response = self._session.get(

@@ -56,6 +56,22 @@ esp_err_t audio_processing_copy_latest_spectrum(float *spectrum_dbfs,
                                                 size_t *bin_count,
                                                 uint64_t *timestamp_ms);
 
+/**
+ * Retarget one of the 4 measured bands to a new center frequency at
+ * runtime (the frequency this cavity is meant to block). Thread-safe:
+ * takes effect on the next processed block. Rejected with
+ * ESP_ERR_INVALID_ARG if target_index is out of range or the requested
+ * band (frequency_hz +/- the configured half-bandwidth) would fall
+ * outside 0..Nyquist.
+ */
+esp_err_t audio_processing_set_target_frequency(size_t target_index,
+                                                float frequency_hz);
+
+/** Copy the current target frequency for one band (as last set, whether by
+ * initial config or audio_processing_set_target_frequency()). */
+esp_err_t audio_processing_get_target_frequency(size_t target_index,
+                                                float *frequency_hz);
+
 #ifdef __cplusplus
 }
 #endif

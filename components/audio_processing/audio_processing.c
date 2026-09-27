@@ -32,6 +32,10 @@ static audio_measurement_callback_t s_callback;
 static void *s_callback_context;
 static i2s_chan_handle_t s_rx_channel;
 static SemaphoreHandle_t s_result_mutex;
+/** Guards s_config.target_frequency_hz only, which is mutable at runtime
+ * via audio_processing_set_target_frequency(); everything else in s_config
+ * is fixed after audio_processing_init() and needs no lock. */
+static SemaphoreHandle_t s_config_mutex;
 static bool s_initialized;
 
 static int32_t s_raw_samples[AUDIO_PROCESSING_FFT_SIZE];
@@ -146,12 +150,18 @@ static esp_err_t process_audio_block(audio_measurement_t *measurement)
         power_to_dbfs((float)(square_sum / AUDIO_PROCESSING_FFT_SIZE));
     measurement->valid = true;
 
+    float target_frequency_hz[AUDIO_PROCESSING_TARGET_COUNT];
+    xSemaphoreTake(s_config_mutex, portMAX_DELAY);
+    memcpy(target_frequency_hz, s_config.target_frequency_hz,
+           sizeof(target_frequency_hz));
+    xSemaphoreGive(s_config_mutex);
+
     const float bin_width_hz = (float)AUDIO_PROCESSING_SAMPLE_RATE_HZ /
                                (float)AUDIO_PROCESSING_FFT_SIZE;
     for (size_t target = 0; target < AUDIO_PROCESSING_TARGET_COUNT; ++target) {
-        const float minimum_hz = s_config.target_frequency_hz[target] -
+        const float minimum_hz = target_frequency_hz[target] -
                                  s_config.target_half_bandwidth_hz;
-        const float maximum_hz = s_config.target_frequency_hz[target] +
+        const float maximum_hz = target_frequency_hz[target] +
                                  s_config.target_half_bandwidth_hz;
         float band_power = 0.0f;
         for (size_t bin = 0; bin < AUDIO_PROCESSING_SPECTRUM_BIN_COUNT;
@@ -229,6 +239,12 @@ esp_err_t audio_processing_init(const audio_processing_config_t *config,
     s_result_mutex = xSemaphoreCreateMutex();
     ESP_RETURN_ON_FALSE(s_result_mutex != NULL, ESP_ERR_NO_MEM, TAG,
                         "Failed to create result mutex");
+    s_config_mutex = xSemaphoreCreateMutex();
+    if (s_config_mutex == NULL) {
+        vSemaphoreDelete(s_result_mutex);
+        s_result_mutex = NULL;
+        return ESP_ERR_NO_MEM;
+    }
 
     s_config = *config;
     s_callback = callback;
@@ -239,6 +255,8 @@ esp_err_t audio_processing_init(const audio_processing_config_t *config,
     if (error != ESP_OK) {
         vSemaphoreDelete(s_result_mutex);
         s_result_mutex = NULL;
+        vSemaphoreDelete(s_config_mutex);
+        s_config_mutex = NULL;
         return error;
     }
 
@@ -251,6 +269,8 @@ esp_err_t audio_processing_init(const audio_processing_config_t *config,
         dsps_fft2r_deinit_fc32();
         vSemaphoreDelete(s_result_mutex);
         s_result_mutex = NULL;
+        vSemaphoreDelete(s_config_mutex);
+        s_config_mutex = NULL;
         return error;
     }
 
@@ -285,6 +305,8 @@ esp_err_t audio_processing_init(const audio_processing_config_t *config,
         dsps_fft2r_deinit_fc32();
         vSemaphoreDelete(s_result_mutex);
         s_result_mutex = NULL;
+        vSemaphoreDelete(s_config_mutex);
+        s_config_mutex = NULL;
         return error;
     }
 
@@ -298,6 +320,8 @@ esp_err_t audio_processing_init(const audio_processing_config_t *config,
         dsps_fft2r_deinit_fc32();
         vSemaphoreDelete(s_result_mutex);
         s_result_mutex = NULL;
+        vSemaphoreDelete(s_config_mutex);
+        s_config_mutex = NULL;
         return ESP_ERR_NO_MEM;
     }
 
@@ -345,5 +369,49 @@ esp_err_t audio_processing_copy_latest_spectrum(float *spectrum_dbfs,
     *bin_count = AUDIO_PROCESSING_SPECTRUM_BIN_COUNT;
     *timestamp_ms = s_latest_measurement.timestamp_ms;
     xSemaphoreGive(s_result_mutex);
+    return ESP_OK;
+}
+
+esp_err_t audio_processing_set_target_frequency(size_t target_index,
+                                                float frequency_hz)
+{
+    ESP_RETURN_ON_FALSE(s_initialized, ESP_ERR_INVALID_STATE, TAG,
+                        "Audio processing is not initialized");
+    ESP_RETURN_ON_FALSE(target_index < AUDIO_PROCESSING_TARGET_COUNT,
+                        ESP_ERR_INVALID_ARG, TAG, "Target index %u is out of range",
+                        (unsigned)target_index);
+
+    const float nyquist_hz = AUDIO_PROCESSING_SAMPLE_RATE_HZ / 2.0f;
+    ESP_RETURN_ON_FALSE(
+        isfinite(frequency_hz) &&
+            frequency_hz - s_config.target_half_bandwidth_hz >= 0.0f &&
+            frequency_hz + s_config.target_half_bandwidth_hz <= nyquist_hz,
+        ESP_ERR_INVALID_ARG, TAG,
+        "Requested target %.3f Hz +/- %.3f Hz band is outside 0..Nyquist",
+        (double)frequency_hz, (double)s_config.target_half_bandwidth_hz);
+
+    xSemaphoreTake(s_config_mutex, portMAX_DELAY);
+    s_config.target_frequency_hz[target_index] = frequency_hz;
+    xSemaphoreGive(s_config_mutex);
+
+    ESP_LOGI(TAG, "Target %u retargeted to %.3f Hz", (unsigned)target_index,
+             (double)frequency_hz);
+    return ESP_OK;
+}
+
+esp_err_t audio_processing_get_target_frequency(size_t target_index,
+                                                float *frequency_hz)
+{
+    ESP_RETURN_ON_FALSE(s_initialized, ESP_ERR_INVALID_STATE, TAG,
+                        "Audio processing is not initialized");
+    ESP_RETURN_ON_FALSE(target_index < AUDIO_PROCESSING_TARGET_COUNT,
+                        ESP_ERR_INVALID_ARG, TAG, "Target index %u is out of range",
+                        (unsigned)target_index);
+    ESP_RETURN_ON_FALSE(frequency_hz != NULL, ESP_ERR_INVALID_ARG, TAG,
+                        "Frequency output must not be NULL");
+
+    xSemaphoreTake(s_config_mutex, portMAX_DELAY);
+    *frequency_hz = s_config.target_frequency_hz[target_index];
+    xSemaphoreGive(s_config_mutex);
     return ESP_OK;
 }

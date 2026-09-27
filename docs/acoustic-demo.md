@@ -22,6 +22,10 @@ The initial targets are 73, 145, 213, and 395 Hz, each with a ±20 Hz band.
 Logarithmic results have a -120 dBFS floor. These are relative digital levels,
 not calibrated sound-pressure levels and not dB SPL.
 
+Each target's center frequency is reconfigurable at runtime — see "Retargeting
+blocked frequencies" below — so those 4 values are starting points, not fixed
+constants.
+
 ## Console commands
 
 ~~~text
@@ -29,6 +33,8 @@ stream on
 stream off
 level
 spectrum
+settarget <band 1-4> <hz>
+gettarget
 ~~~
 
 Acquisition and FFT processing run continuously. Streaming is disabled at
@@ -90,6 +96,24 @@ movement transients as acoustic suppression.
 
 No microphone-to-SPL calibration, transfer function, automatic frequency
 response, or automatic servo control is implemented.
+
+## Retargeting blocked frequencies
+
+Each of the 4 measured bands' center frequency can be changed at runtime
+instead of only at compile time, three ways:
+
+- Console: `settarget <band 1-4> <hz>` / `gettarget`.
+- WiFi (independent of the console, see `docs/software-architecture.md`):
+  `POST /target?id=<1-4>&hz=<float>`, added by `wifi_status_server`.
+- Host script: `python3 -m visualization.set_target --cavity <1-4> --hz <hz>`.
+
+This only changes which frequency the microphone measures for that band — it
+never moves a servo by itself. The half-bandwidth stays fixed (±20 Hz by
+default); a request whose band would fall outside 0..Nyquist is rejected with
+`ESP_ERR_INVALID_ARG` (console) or HTTP 400 (WiFi). The `autotune` branch's
+background control loop re-reads the live target frequencies every cycle, so
+retargeting a band there changes what that cavity's piston steers toward on
+the next cycle without restarting anything.
 
 ## Two-position demonstration
 

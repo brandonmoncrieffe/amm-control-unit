@@ -116,16 +116,24 @@ static esp_err_t append_state_json(char *buffer, size_t capacity)
 
     audio_measurement_t measurement;
     if (audio_processing_get_latest(&measurement) == ESP_OK) {
+        /* Read live, not the frozen config snapshot: targets are mutable at
+         * runtime via /target (see audio_processing_set_target_frequency). */
+        float current_targets_hz[WIFI_STATUS_SERVER_TARGET_COUNT];
+        for (size_t index = 0; index < WIFI_STATUS_SERVER_TARGET_COUNT; ++index) {
+            current_targets_hz[index] = s_config.target_frequency_hz[index];
+            (void)audio_processing_get_target_frequency(index,
+                                                        &current_targets_hz[index]);
+        }
         offset += snprintf(
             buffer + offset, capacity - (size_t)offset,
             "{\"timestamp_ms\":%" PRIu64
             ",\"targets_hz\":[%.3f,%.3f,%.3f,%.3f],"
             "\"target_level_dbfs\":[%.3f,%.3f,%.3f,%.3f],\"rms_dbfs\":%.3f}",
             measurement.timestamp_ms,
-            (double)s_config.target_frequency_hz[0],
-            (double)s_config.target_frequency_hz[1],
-            (double)s_config.target_frequency_hz[2],
-            (double)s_config.target_frequency_hz[3],
+            (double)current_targets_hz[0],
+            (double)current_targets_hz[1],
+            (double)current_targets_hz[2],
+            (double)current_targets_hz[3],
             (double)measurement.target_level_dbfs[0],
             (double)measurement.target_level_dbfs[1],
             (double)measurement.target_level_dbfs[2],
@@ -197,6 +205,68 @@ static esp_err_t spectrum_handler(httpd_req_t *req)
     return httpd_resp_send(req, s_json_buffer, HTTPD_RESP_USE_STRLEN);
 }
 
+/**
+ * POST /target?id=<1-4>&hz=<float>
+ *
+ * Retargets which frequency band N (1 = the same index as cavity N) the
+ * microphone measures — i.e. "block this frequency instead." Forwards
+ * straight to audio_processing_set_target_frequency(), which does its own
+ * 0..Nyquist range validation; this never moves a servo by itself.
+ */
+static esp_err_t target_handler(httpd_req_t *req)
+{
+    char query[64];
+    if (httpd_req_get_url_query_str(req, query, sizeof(query)) != ESP_OK) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
+                            "Missing id and hz query parameters");
+        return ESP_FAIL;
+    }
+
+    char id_str[8];
+    char hz_str[16];
+    if (httpd_query_key_value(query, "id", id_str, sizeof(id_str)) != ESP_OK ||
+        httpd_query_key_value(query, "hz", hz_str, sizeof(hz_str)) != ESP_OK) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
+                            "Missing id and hz query parameters");
+        return ESP_FAIL;
+    }
+
+    char *id_end = NULL;
+    char *hz_end = NULL;
+    const int target_number = (int)strtol(id_str, &id_end, 10);
+    const float requested_hz = strtof(hz_str, &hz_end);
+    if (id_end == id_str || *id_end != '\0' || hz_end == hz_str ||
+        *hz_end != '\0' || target_number < 1 ||
+        target_number > (int)WIFI_STATUS_SERVER_TARGET_COUNT) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
+                            "id must be 1-4 and hz must be a number");
+        return ESP_FAIL;
+    }
+
+    const esp_err_t error = audio_processing_set_target_frequency(
+        (size_t)(target_number - 1), requested_hz);
+    if (error == ESP_ERR_INVALID_ARG) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
+                            "Requested frequency/bandwidth is outside 0..Nyquist");
+        return ESP_FAIL;
+    }
+    if (error != ESP_OK) {
+        httpd_resp_send_500(req);
+        return ESP_FAIL;
+    }
+
+    float applied_hz = requested_hz;
+    (void)audio_processing_get_target_frequency((size_t)(target_number - 1),
+                                                &applied_hz);
+
+    char body[64];
+    const int written = snprintf(body, sizeof(body), "{\"id\":%d,\"hz\":%.3f}",
+                                 target_number, (double)applied_hz);
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+    return httpd_resp_send(req, body, written);
+}
+
 static esp_err_t start_http_server(void)
 {
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
@@ -213,10 +283,17 @@ static esp_err_t start_http_server(void)
         .method = HTTP_GET,
         .handler = spectrum_handler,
     };
+    const httpd_uri_t target_uri = {
+        .uri = "/target",
+        .method = HTTP_POST,
+        .handler = target_handler,
+    };
     ESP_RETURN_ON_ERROR(httpd_register_uri_handler(s_httpd, &state_uri), TAG,
                         "Failed to register /state handler");
     ESP_RETURN_ON_ERROR(httpd_register_uri_handler(s_httpd, &spectrum_uri),
                         TAG, "Failed to register /spectrum handler");
+    ESP_RETURN_ON_ERROR(httpd_register_uri_handler(s_httpd, &target_uri), TAG,
+                        "Failed to register /target handler");
     return ESP_OK;
 }
 
