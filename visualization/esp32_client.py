@@ -77,6 +77,21 @@ class Esp32Client:
         )
         return ControlUnitState(connected=True, servos=servos, audio=audio)
 
+    def set_servo_angle(self, servo_id: int, angle_deg: int) -> int | None:
+        """POST /servo. Returns the angle actually applied after the
+        firmware's own clamping, or None if the request failed."""
+        try:
+            response = self._session.post(
+                f"{self._base_url}/servo",
+                params={"id": servo_id, "angle_deg": int(round(angle_deg))},
+                timeout=REQUEST_TIMEOUT_SECONDS,
+            )
+            response.raise_for_status()
+            payload = response.json()
+        except (requests.RequestException, ValueError):
+            return None
+        return payload.get("angle_deg")
+
     def fetch_spectrum(self) -> SpectrumState | None:
         try:
             response = self._session.get(

@@ -32,11 +32,19 @@ must be adjusted for the physical servos and mechanism.
 ### wifi_status_server (implemented)
 
 Owns a WiFi access point (`esp_wifi` AP mode) and an `esp_http_server`
-exposing two read-only JSON endpoints, `GET /state` and `GET /spectrum`, for
-the host-side live dashboard (see [`docs/visualization.md`](visualization.md)).
-It only calls `servo_control`'s and `audio_processing`'s existing public
-getters — it never commands a servo or configures audio acquisition — and is
-independent of the USB Serial/JTAG console, so both can run at once.
+exposing three endpoints, independent of the USB Serial/JTAG console so both
+can run at once:
+
+- `GET /state` and `GET /spectrum` (read-only) for the host-side live
+  dashboard (see [`docs/visualization.md`](visualization.md)). These only
+  call `servo_control`'s and `audio_processing`'s existing public getters.
+- `POST /servo?id=<1-4>&angle_deg=<int>` (mutating) forwards straight to
+  `servo_set_angle()`, so it applies exactly the same clamping as the serial
+  console's `set` command, and responds with the angle actually applied
+  after clamping. This is what [`docs/auto-tuning.md`](auto-tuning.md)'s
+  background control loop uses to move servos over WiFi; nothing else on the
+  ESP32 calls it automatically.
+
 SSID/password/channel are `Kconfig` options (`main/Kconfig.projbuild`), kept
 out of tracked source in the gitignored `sdkconfig`.
 

@@ -2,6 +2,7 @@
 
 #include <inttypes.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "audio_processing.h"
@@ -197,6 +198,67 @@ static esp_err_t spectrum_handler(httpd_req_t *req)
     return httpd_resp_send(req, s_json_buffer, HTTPD_RESP_USE_STRLEN);
 }
 
+/**
+ * POST /servo?id=<1-4>&angle_deg=<int>
+ *
+ * The only mutating endpoint this component exposes. It does no clamping or
+ * safety checking of its own: it forwards straight to servo_set_angle(),
+ * which applies exactly the same 0-180 then per-servo min/max clamping as
+ * the serial console's "set" command. The response reports the angle that
+ * was actually applied after clamping, not the requested one.
+ */
+static esp_err_t servo_handler(httpd_req_t *req)
+{
+    char query[64];
+    if (httpd_req_get_url_query_str(req, query, sizeof(query)) != ESP_OK) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
+                            "Missing id and angle_deg query parameters");
+        return ESP_FAIL;
+    }
+
+    char id_str[8];
+    char angle_str[8];
+    int servo_number;
+    int angle_deg;
+    if (httpd_query_key_value(query, "id", id_str, sizeof(id_str)) != ESP_OK ||
+        httpd_query_key_value(query, "angle_deg", angle_str,
+                              sizeof(angle_str)) != ESP_OK) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
+                            "Missing id and angle_deg query parameters");
+        return ESP_FAIL;
+    }
+
+    char *id_end = NULL;
+    char *angle_end = NULL;
+    servo_number = (int)strtol(id_str, &id_end, 10);
+    angle_deg = (int)strtol(angle_str, &angle_end, 10);
+    if (id_end == id_str || *id_end != '\0' || angle_end == angle_str ||
+        *angle_end != '\0' || servo_number < 1 ||
+        servo_number > (int)WIFI_STATUS_SERVER_SERVO_COUNT) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
+                            "id must be 1-4 and angle_deg must be an integer");
+        return ESP_FAIL;
+    }
+
+    const esp_err_t error =
+        servo_set_angle((servo_id_t)(servo_number - 1), angle_deg);
+    if (error != ESP_OK) {
+        httpd_resp_send_500(req);
+        return ESP_FAIL;
+    }
+
+    int clamped_angle = 0;
+    (void)servo_get_commanded_angle((servo_id_t)(servo_number - 1),
+                                    &clamped_angle);
+
+    char body[64];
+    const int written = snprintf(body, sizeof(body), "{\"id\":%d,\"angle_deg\":%d}",
+                                 servo_number, clamped_angle);
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+    return httpd_resp_send(req, body, written);
+}
+
 static esp_err_t start_http_server(void)
 {
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
@@ -213,10 +275,17 @@ static esp_err_t start_http_server(void)
         .method = HTTP_GET,
         .handler = spectrum_handler,
     };
+    const httpd_uri_t servo_uri = {
+        .uri = "/servo",
+        .method = HTTP_POST,
+        .handler = servo_handler,
+    };
     ESP_RETURN_ON_ERROR(httpd_register_uri_handler(s_httpd, &state_uri), TAG,
                         "Failed to register /state handler");
     ESP_RETURN_ON_ERROR(httpd_register_uri_handler(s_httpd, &spectrum_uri),
                         TAG, "Failed to register /spectrum handler");
+    ESP_RETURN_ON_ERROR(httpd_register_uri_handler(s_httpd, &servo_uri), TAG,
+                        "Failed to register /servo handler");
     return ESP_OK;
 }
 

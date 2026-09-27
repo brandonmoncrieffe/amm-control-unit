@@ -141,6 +141,26 @@ Join the ESP32's access point first, then open `http://127.0.0.1:8000`. See
 depth is shown before a servo has been calibrated. This dashboard is
 read-only; it does not send servo commands.
 
+The WiFi status server also exposes a mutating `POST /servo` endpoint (used
+by the auto-tuning script below, not by the dashboard) — see
+[`docs/software-architecture.md`](docs/software-architecture.md).
+
+## Background auto-tuning
+
+`visualization/autotune.py` nudges each cavity's piston toward whatever
+frequency is currently loudest in its slice of the incoming spectrum, one
+small step at a time. It defaults to a dry run (logs decisions, moves
+nothing) and needs `calibration/servo_N.csv` for a cavity before it will
+touch it:
+
+```sh
+python3 -m visualization.autotune --esp32-host http://192.168.4.1
+python3 -m visualization.autotune --esp32-host http://192.168.4.1 --enable
+```
+
+See [`docs/auto-tuning.md`](docs/auto-tuning.md) for the algorithm and the
+rate-limiting/safety defaults chosen for the SG90 servos.
+
 ## Servo calibration
 
 Per-servo calibration is defined in `SERVO_CONFIG` in `main/main.c`. The
@@ -172,5 +192,6 @@ Hardware decisions and the planned software modules are recorded in
 [`docs/software-architecture.md`](docs/software-architecture.md). Walkthroughs
 are available for
 [`servo control`](docs/servo-control.md), the
-[`live acoustic demo`](docs/acoustic-demo.md), and the
-[`live web dashboard`](docs/visualization.md).
+[`live acoustic demo`](docs/acoustic-demo.md), the
+[`live web dashboard`](docs/visualization.md), and
+[`background auto-tuning`](docs/auto-tuning.md).

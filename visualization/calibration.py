@@ -28,6 +28,16 @@ class DepthCalibration:
     def max_depth_mm(self) -> float:
         return max(self._distances)
 
+    @property
+    def angle_range_deg(self) -> tuple[float, float]:
+        """(min, max) commanded angle actually exercised during calibration.
+
+        auto-tuning must stay within this range rather than the servo's full
+        0-180 travel: it is the only range this calibration curve — and thus
+        the only range angle_for_depth() — was ever validated against.
+        """
+        return (self._angles[0], self._angles[-1])
+
     def depth_mm(self, angle_deg: float) -> float:
         if angle_deg <= self._angles[0]:
             return self._distances[0]
@@ -40,6 +50,29 @@ class DepthCalibration:
             return distance_low
         fraction = (angle_deg - angle_low) / (angle_high - angle_low)
         return distance_low + fraction * (distance_high - distance_low)
+
+    def angle_for_depth(self, depth_mm: float) -> float:
+        """Inverse of depth_mm(): nearest calibrated angle for a target depth.
+
+        Re-sorts the same measured points by depth so this works regardless
+        of whether this servo's mechanism increases or decreases depth as
+        angle increases — that direction is a property of the physical
+        linkage, not something to assume.
+        """
+        paired = sorted(zip(self._distances, self._angles))
+        depths = [depth for depth, _ in paired]
+        angles = [angle for _, angle in paired]
+        if depth_mm <= depths[0]:
+            return angles[0]
+        if depth_mm >= depths[-1]:
+            return angles[-1]
+        index = bisect.bisect_right(depths, depth_mm) - 1
+        depth_low, depth_high = depths[index], depths[index + 1]
+        angle_low, angle_high = angles[index], angles[index + 1]
+        if depth_high == depth_low:
+            return angle_low
+        fraction = (depth_mm - depth_low) / (depth_high - depth_low)
+        return angle_low + fraction * (angle_high - angle_low)
 
 
 def load_calibrations(servo_count: int) -> dict[int, DepthCalibration]:
