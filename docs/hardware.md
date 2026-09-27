@@ -1,7 +1,6 @@
 # Hardware
 
-This document records confirmed hardware facts and the decisions that must be
-made before peripheral drivers are implemented.
+This document records confirmed hardware facts and current wiring.
 
 ## Controller
 
@@ -19,14 +18,18 @@ enabled or otherwise configured by this project.
 
 | Item | Value |
 | --- | --- |
-| Microphone model | TBD: ICS-43434 or compatible I2S microphone anticipated |
-| BCLK GPIO | TBD |
-| WS / LRCLK GPIO | TBD |
-| Data GPIO | TBD |
-| Supply voltage | TBD from the selected microphone breakout specification |
+| Microphone model | Adafruit ICS-43434 I2S MEMS microphone breakout |
+| VDD | ESP32 3.3 V |
+| Ground | ESP32 GND |
+| BCLK / SCK | GPIO10 |
+| WS / LRCLK | GPIO11 |
+| DOUT / DATA | GPIO12 |
+| L/R select | GND, selecting the left I2S slot |
 
-Confirm the breakout's logic levels, channel-select wiring, and electrical
-requirements before assigning pins or implementing `audio_input`.
+The ICS-43434 is a 3.3 V device and must not be connected to 5 V. GPIO10,
+GPIO11, and GPIO12 are exposed on the selected ESP32-S3 DevKitC-1 and do not
+conflict with servo GPIO36-39. No microphone level shifter is required because
+the microphone and ESP32 use 3.3 V logic.
 
 ## Servos
 
@@ -54,7 +57,7 @@ Octal flash or Octal PSRAM, because those pins are part of that memory bus.
 ## Grounding and logic levels
 
 - Common ground wiring: required between ESP32 GND and the external 5 V servo
-  supply ground. The microphone must eventually share the same reference.
+  supply ground. The microphone also uses ESP32 GND.
 - Level shifting: none is currently specified for the 3.3 V ESP32 servo signal;
   verify the selected servos accept this input level before final assembly.
 - Power distribution, decoupling, protection, and connector details: TBD.

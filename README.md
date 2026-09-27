@@ -1,8 +1,9 @@
 # AMM Control Unit
 
 ESP-IDF firmware for independently controlling four SG90 positional servos
-from an interactive serial console. Audio input and automatic servo behavior
-are not implemented.
+and measuring four acoustic target bands with an ICS-43434 I2S microphone.
+Servo control remains manual; automatic acoustic-to-servo behavior is not
+implemented.
 
 ## Current target
 
@@ -39,6 +40,23 @@ Power the servos from the external regulated 5 V supply, not from the ESP32.
 Connect the external supply ground to ESP32 GND before connecting the signal
 wires.
 
+## I2S microphone wiring
+
+The confirmed microphone is the Adafruit ICS-43434 I2S MEMS microphone
+breakout.
+
+| Microphone pin | ESP32-S3 connection |
+| --- | --- |
+| VDD / 3V | 3.3 V |
+| GND | ESP32 GND |
+| BCLK / SCK | GPIO10 |
+| WS / LRCLK | GPIO11 |
+| DOUT / DATA | GPIO12 |
+| L/R / SEL | GND (left channel) |
+
+Do not power the microphone from 5 V. GPIO10, GPIO11, and GPIO12 are exposed
+on the selected ESP32-S3 DevKitC-1 and do not conflict with servo GPIO36-39.
+
 ## Flash and monitor
 
 After selecting the correct serial port, the standard ESP-IDF workflow is:
@@ -57,6 +75,9 @@ set <servo 1-4> <angle>
 all <angle>
 center
 status
+stream <on|off>
+level
+spectrum
 help
 ```
 
@@ -71,6 +92,33 @@ all 90
 
 Requested angles are clamped first to 0–180 degrees and then to each servo's
 configured permitted range.
+
+Audio acquisition and FFT processing run continuously. The stream-on command
+enables compact target-band records at approximately 7.8 updates per second;
+stream-off stops only the serial records, not microphone processing. The
+level command prints one target/RMS record and spectrum prints the latest
+complete FFT. Reported audio levels are relative dBFS, not calibrated dB SPL.
+
+## Live acoustic plot
+
+Install the host dependencies:
+
+~~~sh
+python3 -m venv .venv
+source .venv/bin/activate
+python3 -m pip install -r tools/requirements.txt
+~~~
+
+Close the ESP-IDF monitor, then start the plot:
+
+~~~sh
+python3 tools/live_spectrum.py --port /dev/cu.usbmodem1101
+~~~
+
+The plotter automatically enables streaming. Its terminal accepts
+baseline start, baseline stop, servo commands such as set 1 30, and quit.
+Opening the serial port may reset the board and command the servos to their
+configured 0-degree startup position.
 
 ## Servo calibration
 
@@ -100,6 +148,7 @@ mechanically safe.
 
 Hardware decisions and the planned software modules are recorded in
 [`docs/hardware.md`](docs/hardware.md) and
-[`docs/software-architecture.md`](docs/software-architecture.md). A walkthrough
-of the implemented servo path is in
-[`docs/servo-control.md`](docs/servo-control.md).
+[`docs/software-architecture.md`](docs/software-architecture.md). Walkthroughs
+are available for
+[`servo control`](docs/servo-control.md) and the
+[`live acoustic demo`](docs/acoustic-demo.md).

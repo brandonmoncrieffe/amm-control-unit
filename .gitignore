@@ -12,7 +12,6 @@ sdkconfig.*
 
 # ESP-IDF Component Manager output
 managed_components/
-dependencies.lock
 
 # VS Code and workspace-local settings
 .vscode/

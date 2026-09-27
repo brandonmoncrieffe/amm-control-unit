@@ -1,12 +1,20 @@
 #include <errno.h>
+#include <inttypes.h>
 #include <limits.h>
 #include <stdbool.h>
+#include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
+#include "audio_processing.h"
 #include "esp_console.h"
 #include "esp_err.h"
 #include "esp_log.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/queue.h"
+#include "freertos/semphr.h"
+#include "freertos/task.h"
 #include "servo_control.h"
 
 static const char *TAG = "amm_control_unit";
@@ -19,6 +27,64 @@ static const servo_control_config_t SERVO_CONFIG = {
         SERVO_CALIBRATION_DEFAULT(39),
     },
 };
+
+static const audio_processing_config_t AUDIO_CONFIG = {
+    .bclk_gpio = GPIO_NUM_10,
+    .ws_gpio = GPIO_NUM_11,
+    .data_gpio = GPIO_NUM_12,
+    .target_frequency_hz = {73.0f, 145.0f, 213.0f, 395.0f},
+    .target_half_bandwidth_hz = 20.0f,
+};
+
+static atomic_bool s_stream_enabled = ATOMIC_VAR_INIT(false);
+static SemaphoreHandle_t s_serial_output_mutex;
+static QueueHandle_t s_stream_queue;
+static float s_spectrum_snapshot[AUDIO_PROCESSING_SPECTRUM_BIN_COUNT];
+
+static void print_audio_config_record(void)
+{
+    printf("AUDIO_CONFIG,%u,%u,%.3f,%.3f,%.3f,%.3f,%.3f\n",
+           AUDIO_PROCESSING_SAMPLE_RATE_HZ, AUDIO_PROCESSING_FFT_SIZE,
+           (double)AUDIO_CONFIG.target_half_bandwidth_hz,
+           (double)AUDIO_CONFIG.target_frequency_hz[0],
+           (double)AUDIO_CONFIG.target_frequency_hz[1],
+           (double)AUDIO_CONFIG.target_frequency_hz[2],
+           (double)AUDIO_CONFIG.target_frequency_hz[3]);
+}
+
+static void print_measurement_record(const audio_measurement_t *measurement)
+{
+    printf("SPECTRUM,%" PRIu64 ",%.3f,%.3f,%.3f,%.3f,%.3f\n",
+           measurement->timestamp_ms,
+           (double)measurement->target_level_dbfs[0],
+           (double)measurement->target_level_dbfs[1],
+           (double)measurement->target_level_dbfs[2],
+           (double)measurement->target_level_dbfs[3],
+           (double)measurement->overall_rms_dbfs);
+}
+
+static void audio_measurement_callback(
+    const audio_measurement_t *measurement, void *context)
+{
+    (void)context;
+    xQueueOverwrite(s_stream_queue, measurement);
+}
+
+static void serial_stream_task(void *context)
+{
+    (void)context;
+    audio_measurement_t measurement;
+
+    while (true) {
+        if (xQueueReceive(s_stream_queue, &measurement, portMAX_DELAY) ==
+                pdTRUE &&
+            atomic_load(&s_stream_enabled) &&
+            xSemaphoreTake(s_serial_output_mutex, 0) == pdTRUE) {
+            print_measurement_record(&measurement);
+            xSemaphoreGive(s_serial_output_mutex);
+        }
+    }
+}
 
 static bool parse_integer(const char *text, int *value)
 {
@@ -117,6 +183,85 @@ static int status_command(int argc, char **argv)
     return 0;
 }
 
+static int stream_command(int argc, char **argv)
+{
+    if (argc != 2 ||
+        (strcmp(argv[1], "on") != 0 && strcmp(argv[1], "off") != 0)) {
+        printf("Usage: stream <on|off>\n");
+        return 1;
+    }
+
+    const bool enable = strcmp(argv[1], "on") == 0;
+    xSemaphoreTake(s_serial_output_mutex, portMAX_DELAY);
+    if (enable) {
+        print_audio_config_record();
+        atomic_store(&s_stream_enabled, true);
+    } else {
+        atomic_store(&s_stream_enabled, false);
+        printf("Audio stream off\n");
+    }
+    xSemaphoreGive(s_serial_output_mutex);
+    return 0;
+}
+
+static int level_command(int argc, char **argv)
+{
+    (void)argv;
+    if (argc != 1) {
+        printf("Usage: level\n");
+        return 1;
+    }
+
+    audio_measurement_t measurement;
+    if (audio_processing_get_latest(&measurement) != ESP_OK) {
+        printf("Audio measurement not ready\n");
+        return 1;
+    }
+
+    xSemaphoreTake(s_serial_output_mutex, portMAX_DELAY);
+    print_measurement_record(&measurement);
+    xSemaphoreGive(s_serial_output_mutex);
+    return 0;
+}
+
+static int spectrum_command(int argc, char **argv)
+{
+    (void)argv;
+    if (argc != 1) {
+        printf("Usage: spectrum\n");
+        return 1;
+    }
+
+    size_t bin_count = 0U;
+    uint64_t timestamp_ms = 0U;
+    const esp_err_t error = audio_processing_copy_latest_spectrum(
+        s_spectrum_snapshot, AUDIO_PROCESSING_SPECTRUM_BIN_COUNT, &bin_count,
+        &timestamp_ms);
+    if (error != ESP_OK) {
+        printf("Audio measurement not ready\n");
+        return 1;
+    }
+
+    const double bin_width_hz = (double)AUDIO_PROCESSING_SAMPLE_RATE_HZ /
+                                AUDIO_PROCESSING_FFT_SIZE;
+    xSemaphoreTake(s_serial_output_mutex, portMAX_DELAY);
+    printf("FFT_BEGIN,%" PRIu64 ",%u,%u,%.6f,%u\n", timestamp_ms,
+           AUDIO_PROCESSING_SAMPLE_RATE_HZ, AUDIO_PROCESSING_FFT_SIZE,
+           bin_width_hz, (unsigned)bin_count);
+    for (size_t start = 0U; start < bin_count; start += 32U) {
+        const size_t end =
+            (start + 32U < bin_count) ? start + 32U : bin_count;
+        printf("FFT,%u", (unsigned)start);
+        for (size_t bin = start; bin < end; ++bin) {
+            printf(",%.3f", (double)s_spectrum_snapshot[bin]);
+        }
+        printf("\n");
+    }
+    printf("FFT_END,%" PRIu64 "\n", timestamp_ms);
+    xSemaphoreGive(s_serial_output_mutex);
+    return 0;
+}
+
 static void register_console_commands(void)
 {
     const esp_console_cmd_t commands[] = {
@@ -141,6 +286,22 @@ static void register_console_commands(void)
             .command = "status",
             .help = "Show the last commanded angle for every servo",
             .func = &status_command,
+        },
+        {
+            .command = "stream",
+            .help = "Enable or disable continuous target-frequency data",
+            .hint = "<on|off>",
+            .func = &stream_command,
+        },
+        {
+            .command = "level",
+            .help = "Print the latest target-frequency and RMS levels",
+            .func = &level_command,
+        },
+        {
+            .command = "spectrum",
+            .help = "Print the latest complete FFT in chunked CSV records",
+            .func = &spectrum_command,
         },
     };
 
@@ -179,7 +340,17 @@ static void start_console(void)
 void app_main(void)
 {
     ESP_LOGI(TAG, "AMM control unit firmware started");
+    s_serial_output_mutex = xSemaphoreCreateMutex();
+    ESP_ERROR_CHECK(s_serial_output_mutex != NULL ? ESP_OK : ESP_ERR_NO_MEM);
+    s_stream_queue = xQueueCreate(1U, sizeof(audio_measurement_t));
+    ESP_ERROR_CHECK(s_stream_queue != NULL ? ESP_OK : ESP_ERR_NO_MEM);
+    ESP_ERROR_CHECK(xTaskCreate(serial_stream_task, "serial_stream", 3072U,
+                                NULL, 4U, NULL) == pdPASS
+                        ? ESP_OK
+                        : ESP_ERR_NO_MEM);
     ESP_ERROR_CHECK(servo_init(&SERVO_CONFIG));
+    ESP_ERROR_CHECK(audio_processing_init(&AUDIO_CONFIG,
+                                          audio_measurement_callback, NULL));
     register_console_commands();
     start_console();
 }
