@@ -47,6 +47,11 @@ from visualization.esp32_client import DEFAULT_BASE_URL, Esp32Client
 logger = logging.getLogger("autotune")
 
 SERVO_COUNT = 4
+# Only 2 of the firmware's 4 servo slots have a real cavity/piston wired up
+# right now: servo 1 (GPIO36) and servo 2 (GPIO37). Servos 3 and 4 exist in
+# the firmware config but aren't attached to anything physical, so this
+# script must never try to move them or split search zones around them.
+REAL_CAVITY_IDS = [1, 2]
 STEP_DEPTH_FALLBACK_MM = 0.5  # used only if a calibration curve is degenerate
 
 
@@ -58,22 +63,23 @@ class Zone:
     high_hz: float
 
 
-def build_zones(target_hz: list[float], top_hz: float) -> list[Zone]:
-    """One frequency zone per cavity, split at the midpoints between the
-    firmware's configured target bands, so cavities never chase the same
-    peak."""
-    ordered = sorted(range(len(target_hz)), key=lambda i: target_hz[i])
+def build_zones(cavity_targets: list[tuple[int, float]], top_hz: float) -> list[Zone]:
+    """One frequency zone per (cavity_id, target_hz) pair, split at the
+    midpoints between neighboring targets, so cavities never chase the
+    same peak. Only pass the cavities that actually have hardware — a
+    zone is only ever as wide as the real cavities bounding it."""
+    ordered = sorted(cavity_targets, key=lambda pair: pair[1])
     bounds = [0.0]
-    for a, b in zip(ordered, ordered[1:]):
-        bounds.append((target_hz[a] + target_hz[b]) / 2.0)
+    for (_, hz_a), (_, hz_b) in zip(ordered, ordered[1:]):
+        bounds.append((hz_a + hz_b) / 2.0)
     bounds.append(top_hz)
 
     zones = []
-    for rank, cavity_index in enumerate(ordered):
+    for rank, (cavity_id, target_hz) in enumerate(ordered):
         zones.append(
             Zone(
-                cavity_id=cavity_index + 1,
-                target_hz=target_hz[cavity_index],
+                cavity_id=cavity_id,
+                target_hz=target_hz,
                 low_hz=bounds[rank],
                 high_hz=bounds[rank + 1],
             )
@@ -115,7 +121,8 @@ def run(args: argparse.Namespace) -> None:
     calibrations = load_calibrations(SERVO_COUNT)
     limiter = RateLimiter(args.max_moves_per_minute)
 
-    missing = sorted(set(range(1, SERVO_COUNT + 1)) - calibrations.keys())
+    logger.info("Considering only the real cavities: %s", REAL_CAVITY_IDS)
+    missing = sorted(set(REAL_CAVITY_IDS) - calibrations.keys())
     if missing:
         logger.warning(
             "No calibration data for cavity/cavities %s — those will be "
@@ -130,7 +137,7 @@ def run(args: argparse.Namespace) -> None:
             "ENABLED: this will physically move servos over WiFi. Ctrl-C to stop."
         )
 
-    cavity_order = list(range(1, SERVO_COUNT + 1))
+    cavity_order = list(REAL_CAVITY_IDS)
     rotation_index = 0
 
     while True:
@@ -141,7 +148,10 @@ def run(args: argparse.Namespace) -> None:
             time.sleep(args.interval)
             continue
 
-        zones = build_zones(state.audio.targets_hz, args.search_ceiling_hz)
+        cavity_targets = [
+            (real_id, state.audio.targets_hz[real_id - 1]) for real_id in REAL_CAVITY_IDS
+        ]
+        zones = build_zones(cavity_targets, args.search_ceiling_hz)
         freqs_hz = [bin_index * spectrum.bin_width_hz for bin_index in range(len(spectrum.dbfs))]
 
         cavity_id = cavity_order[rotation_index % len(cavity_order)]
