@@ -8,6 +8,10 @@
   const CHART_H = 220;
   const MARGIN = { top: 12, right: 8, bottom: 22, left: 30 };
   const MAX_ANGLE_DEG = 180;
+  // Physical piston travel limit in mm (from the CAD/physics discussion,
+  // not yet recorded in any committed doc) — used only as a fallback when a
+  // cavity has no calibration CSV yet and its own max_depth_mm is unknown.
+  const FALLBACK_MAX_DEPTH_MM = 29.5;
 
   // Fixed 2x2 grid positions, matching the physical block's pocket layout
   // (top-left, top-right, bottom-left, bottom-right). Servo-id-to-corner
@@ -25,14 +29,6 @@
 
   function cssVar(name) {
     return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-  }
-
-  // Depth is encoded purely as lightness of the assembly's own lavender
-  // material color — shallow stays pale, deep stays a touch more saturated,
-  // but always within a narrow, light band (never a deep/dark purple).
-  function depthLightness(fraction) {
-    const clamped = Math.max(0, Math.min(1, fraction));
-    return 80 - clamped * 20; // 80% (shallow) -> 60% (deep)
   }
 
   function ensureCavityCell(id) {
@@ -69,7 +65,7 @@
 
     let fraction;
     if (cavity.depth_mm != null) {
-      const maxDepthMm = cavity.max_depth_mm || cavity.depth_mm || 1;
+      const maxDepthMm = cavity.max_depth_mm || FALLBACK_MAX_DEPTH_MM;
       fraction = cavity.depth_mm / maxDepthMm;
       refs.depth.textContent = cavity.depth_mm.toFixed(1);
       refs.unit.textContent = "mm";
@@ -79,9 +75,8 @@
       refs.unit.textContent = "°";
     }
 
-    const hue = cssVar("--cell-hue");
-    const sat = cssVar("--cell-sat");
-    refs.swatch.style.setProperty("--cell-fill", `hsl(${hue} ${sat} ${depthLightness(fraction)}%)`);
+    const fillPercent = Math.max(0, Math.min(1, fraction)) * 100;
+    refs.swatch.style.setProperty("--fill-pct", `${fillPercent.toFixed(1)}%`);
 
     refs.target.textContent = cavity.target_hz != null ? `${cavity.target_hz.toFixed(0)}hz` : "—";
     refs.level.textContent = cavity.level_dbfs != null ? `${cavity.level_dbfs.toFixed(0)}db` : "—";
