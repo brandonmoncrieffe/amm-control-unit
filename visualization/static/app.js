@@ -1,110 +1,117 @@
 (() => {
   "use strict";
 
-  const CAVITY_COLORS = {
-    1: "var(--series-1)",
-    2: "var(--series-2)",
-    3: "var(--series-3)",
-    4: "var(--series-4)",
-  };
-  const CAVITY_COLOR_HEX = {
-    // Used for SVG stroke/fill, which cannot resolve CSS var() the same way
-    // text/background properties can in every browser reliably for SVG attrs.
-    1: getComputedColor("--series-1", "#2a78d6"),
-    2: getComputedColor("--series-2", "#eb6834"),
-    3: getComputedColor("--series-3", "#1baf7a"),
-    4: getComputedColor("--series-4", "#eda100"),
-  };
-
   const CHART_MAX_HZ = 1000; // All configured target bands sit well under this.
   const CHART_MIN_DBFS = -120;
   const CHART_MAX_DBFS = 0;
-  const MARGIN = { top: 12, right: 16, bottom: 28, left: 44 };
-  const VIEWBOX_WIDTH = 960;
-  const VIEWBOX_HEIGHT = 360;
+  const CHART_W = 680;
+  const CHART_H = 220;
+  const MARGIN = { top: 12, right: 8, bottom: 22, left: 30 };
+  const MAX_ANGLE_DEG = 180;
 
-  const cavityGrid = document.getElementById("cavity-grid");
+  // Fixed 2x2 grid positions, matching the physical block's pocket layout
+  // (top-left, top-right, bottom-left, bottom-right). Servo-id-to-corner
+  // mapping is a placeholder until the real assembly wiring is confirmed.
+  const CELL_ORDER = [1, 2, 3, 4];
+
+  const assembly = document.getElementById("assembly");
   const connectionStatus = document.getElementById("connection-status");
   const rmsReadout = document.getElementById("rms-readout");
-  const chartLegend = document.getElementById("chart-legend");
   const svg = document.getElementById("spectrum-chart");
   const tooltip = document.getElementById("chart-tooltip");
 
-  const cavityCards = new Map();
+  const cavityCells = new Map();
   let latestSpectrum = null;
 
-  function getComputedColor(varName, fallback) {
-    const value = getComputedStyle(document.querySelector(".viz-root") || document.body)
-      .getPropertyValue(varName)
-      .trim();
-    return value || fallback;
+  function cssVar(name) {
+    return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
   }
 
-  function ensureCavityCard(id) {
-    if (cavityCards.has(id)) {
-      return cavityCards.get(id);
+  // Depth is encoded purely as lightness of the assembly's own lavender
+  // material color — shallow stays pale, deep stays a touch more saturated,
+  // but always within a narrow, light band (never a deep/dark purple).
+  function depthLightness(fraction) {
+    const clamped = Math.max(0, Math.min(1, fraction));
+    return 80 - clamped * 20; // 80% (shallow) -> 60% (deep)
+  }
+
+  function ensureCavityCell(id) {
+    if (cavityCells.has(id)) {
+      return cavityCells.get(id);
     }
-    const card = document.createElement("article");
-    card.className = "cavity-card";
-    card.style.setProperty("--cavity-color", CAVITY_COLORS[id] || "var(--series-1)");
-    card.innerHTML = `
-      <div class="cavity-card__title">
-        <span class="cavity-card__swatch"></span>
-        <span>Cavity ${id}</span>
+    const cell = document.createElement("div");
+    cell.className = "cell";
+    const swatch = document.createElement("div");
+    swatch.className = "cell__swatch";
+    swatch.innerHTML = `
+      <div class="cell__id">C${id}</div>
+      <div class="cell__depth" data-field="depth">— <span class="cell__depth-unit" data-field="unit"></span></div>
+      <div class="cell__meta">
+        <span data-field="target">—</span>
+        <span data-field="level">—</span>
       </div>
-      <div class="cavity-card__metric"><span>Depth</span><strong data-field="depth">—</strong></div>
-      <div class="cavity-card__metric"><span>Blocking</span><strong data-field="target">—</strong></div>
-      <div class="cavity-card__metric"><span>Level</span><strong data-field="level">—</strong></div>
-      <div class="cavity-card__bar-track"><div class="cavity-card__bar-fill"></div></div>
-      <div class="cavity-card__bar-caption" data-field="caption">Commanded angle</div>
     `;
-    cavityGrid.appendChild(card);
+    cell.appendChild(swatch);
+    assembly.appendChild(cell);
     const refs = {
-      root: card,
-      depth: card.querySelector('[data-field="depth"]'),
-      target: card.querySelector('[data-field="target"]'),
-      level: card.querySelector('[data-field="level"]'),
-      caption: card.querySelector('[data-field="caption"]'),
-      barFill: card.querySelector(".cavity-card__bar-fill"),
+      swatch,
+      depth: swatch.querySelector('[data-field="depth"]').firstChild,
+      unit: swatch.querySelector('[data-field="unit"]'),
+      target: swatch.querySelector('[data-field="target"]'),
+      level: swatch.querySelector('[data-field="level"]'),
     };
-    cavityCards.set(id, refs);
+    cavityCells.set(id, refs);
     return refs;
   }
 
-  function updateCavityCard(cavity) {
-    const refs = ensureCavityCard(cavity.id);
+  function updateCavityCell(cavity) {
+    const refs = ensureCavityCell(cavity.id);
 
+    let fraction;
     if (cavity.depth_mm != null) {
-      refs.depth.textContent = `${cavity.depth_mm.toFixed(1)} mm`;
-      refs.caption.textContent = "Calibrated piston depth";
       const maxDepthMm = cavity.max_depth_mm || cavity.depth_mm || 1;
-      const fraction = Math.max(0, Math.min(1, cavity.depth_mm / maxDepthMm));
-      refs.barFill.style.width = `${(fraction * 100).toFixed(0)}%`;
+      fraction = cavity.depth_mm / maxDepthMm;
+      refs.depth.textContent = cavity.depth_mm.toFixed(1);
+      refs.unit.textContent = "mm";
     } else {
-      refs.depth.textContent = `${cavity.angle_deg}°`;
-      refs.caption.textContent = "Commanded angle (not calibrated)";
-      refs.barFill.style.width = `${(cavity.angle_deg / 180) * 100}%`;
+      fraction = cavity.angle_deg / MAX_ANGLE_DEG;
+      refs.depth.textContent = cavity.angle_deg;
+      refs.unit.textContent = "°";
     }
 
-    refs.target.textContent = cavity.target_hz != null ? `${cavity.target_hz.toFixed(0)} Hz` : "—";
-    refs.level.textContent = cavity.level_dbfs != null ? `${cavity.level_dbfs.toFixed(1)} dBFS` : "—";
+    const hue = cssVar("--cell-hue");
+    const sat = cssVar("--cell-sat");
+    refs.swatch.style.setProperty("--cell-fill", `hsl(${hue} ${sat} ${depthLightness(fraction)}%)`);
+
+    refs.target.textContent = cavity.target_hz != null ? `${cavity.target_hz.toFixed(0)}hz` : "—";
+    refs.level.textContent = cavity.level_dbfs != null ? `${cavity.level_dbfs.toFixed(0)}db` : "—";
+  }
+
+  function renderAssembly(frame) {
+    const byId = new Map(frame.cavities.map((cavity) => [cavity.id, cavity]));
+    CELL_ORDER.forEach((id) => {
+      const cavity = byId.get(id);
+      if (cavity) {
+        updateCavityCell(cavity);
+      }
+    });
   }
 
   function updateConnectionStatus(connected) {
-    connectionStatus.classList.toggle("status-pill--connected", connected);
-    connectionStatus.classList.toggle("status-pill--disconnected", !connected);
+    connectionStatus.classList.toggle("status--connected", connected);
+    connectionStatus.classList.toggle("status--disconnected", !connected);
     connectionStatus.querySelector(".status-text").textContent = connected
-      ? "ESP32 connected"
-      : "ESP32 unreachable";
+      ? "esp32 connected"
+      : "esp32 unreachable";
   }
 
   function xToPixel(freqHz) {
-    const plotWidth = VIEWBOX_WIDTH - MARGIN.left - MARGIN.right;
+    const plotWidth = CHART_W - MARGIN.left - MARGIN.right;
     return MARGIN.left + (freqHz / CHART_MAX_HZ) * plotWidth;
   }
 
   function yToPixel(dbfs) {
-    const plotHeight = VIEWBOX_HEIGHT - MARGIN.top - MARGIN.bottom;
+    const plotHeight = CHART_H - MARGIN.top - MARGIN.bottom;
     const clamped = Math.max(CHART_MIN_DBFS, Math.min(CHART_MAX_DBFS, dbfs));
     const fraction = (clamped - CHART_MIN_DBFS) / (CHART_MAX_DBFS - CHART_MIN_DBFS);
     return MARGIN.top + (1 - fraction) * plotHeight;
@@ -120,83 +127,48 @@
 
   function renderChart(frame) {
     svg.innerHTML = "";
-    svg.setAttribute("viewBox", `0 0 ${VIEWBOX_WIDTH} ${VIEWBOX_HEIGHT}`);
+    svg.setAttribute("viewBox", `0 0 ${CHART_W} ${CHART_H}`);
 
-    const gridColor = getComputedColor("--gridline", "#e1e0d9");
-    const mutedColor = getComputedColor("--text-muted", "#898781");
-    const baselineColor = getComputedColor("--baseline", "#c3c2b7");
+    const inkMuted = cssVar("--ink-muted");
+    const inkFaint = cssVar("--ink-faint");
+    const accent = cssVar("--accent");
 
-    // Horizontal gridlines every 20 dBFS, with axis labels (recessive ink).
-    for (let dbfs = CHART_MAX_DBFS; dbfs >= CHART_MIN_DBFS; dbfs -= 20) {
-      const y = yToPixel(dbfs);
-      svg.appendChild(
-        svgEl("line", {
-          x1: MARGIN.left,
-          x2: VIEWBOX_WIDTH - MARGIN.right,
-          y1: y,
-          y2: y,
-          stroke: gridColor,
-          "stroke-width": 1,
-        })
-      );
+    svg.appendChild(
+      svgEl("line", {
+        x1: MARGIN.left,
+        x2: CHART_W - MARGIN.right,
+        y1: CHART_H - MARGIN.bottom,
+        y2: CHART_H - MARGIN.bottom,
+        stroke: inkFaint,
+        "stroke-width": 1,
+      })
+    );
+
+    [0, 500, 1000].forEach((hz) => {
       svg.appendChild(
         svgEl("text", {
-          x: MARGIN.left - 8,
-          y: y + 3,
+          x: xToPixel(hz),
+          y: CHART_H - MARGIN.bottom + 14,
+          "text-anchor": hz === 0 ? "start" : hz === CHART_MAX_HZ ? "end" : "middle",
+          "font-family": "IBM Plex Mono, monospace",
+          "font-size": 9.5,
+          fill: inkMuted,
+        })
+      ).textContent = `${hz}hz`;
+    });
+    [CHART_MAX_DBFS, CHART_MIN_DBFS].forEach((dbfs) => {
+      svg.appendChild(
+        svgEl("text", {
+          x: MARGIN.left - 6,
+          y: yToPixel(dbfs) + (dbfs === CHART_MAX_DBFS ? 8 : 0),
           "text-anchor": "end",
-          "font-size": 10,
-          fill: mutedColor,
+          "font-family": "IBM Plex Mono, monospace",
+          "font-size": 9.5,
+          fill: inkMuted,
         })
       ).textContent = `${dbfs}`;
-    }
+    });
 
-    // Vertical gridlines every 200 Hz.
-    for (let hz = 0; hz <= CHART_MAX_HZ; hz += 200) {
-      const x = xToPixel(hz);
-      svg.appendChild(
-        svgEl("line", {
-          x1: x,
-          x2: x,
-          y1: MARGIN.top,
-          y2: VIEWBOX_HEIGHT - MARGIN.bottom,
-          stroke: gridColor,
-          "stroke-width": 1,
-        })
-      );
-      svg.appendChild(
-        svgEl("text", {
-          x,
-          y: VIEWBOX_HEIGHT - MARGIN.bottom + 16,
-          "text-anchor": "middle",
-          "font-size": 10,
-          fill: mutedColor,
-        })
-      ).textContent = `${hz}`;
-    }
-
-    // Baseline axes.
-    svg.appendChild(
-      svgEl("line", {
-        x1: MARGIN.left,
-        x2: MARGIN.left,
-        y1: MARGIN.top,
-        y2: VIEWBOX_HEIGHT - MARGIN.bottom,
-        stroke: baselineColor,
-        "stroke-width": 1,
-      })
-    );
-    svg.appendChild(
-      svgEl("line", {
-        x1: MARGIN.left,
-        x2: VIEWBOX_WIDTH - MARGIN.right,
-        y1: VIEWBOX_HEIGHT - MARGIN.bottom,
-        y2: VIEWBOX_HEIGHT - MARGIN.bottom,
-        stroke: baselineColor,
-        "stroke-width": 1,
-      })
-    );
-
-    // Incoming spectrum line.
     if (frame.spectrum && frame.spectrum.dbfs && frame.spectrum.dbfs.length > 0) {
       const binWidthHz = frame.spectrum.bin_width_hz;
       const points = [];
@@ -212,59 +184,40 @@
           svgEl("polyline", {
             points: points.join(" "),
             fill: "none",
-            stroke: getComputedColor("--text-secondary", "#52514e"),
-            "stroke-width": 2,
+            stroke: inkMuted,
+            "stroke-width": 1.25,
             "stroke-linejoin": "round",
           })
         );
       }
     }
 
-    // One dashed marker per cavity at its blocked/target frequency.
     frame.cavities.forEach((cavity) => {
       if (cavity.target_hz == null || cavity.target_hz > CHART_MAX_HZ) {
         return;
       }
       const x = xToPixel(cavity.target_hz);
-      const color = CAVITY_COLOR_HEX[cavity.id] || CAVITY_COLOR_HEX[1];
       svg.appendChild(
         svgEl("line", {
           x1: x,
           x2: x,
           y1: MARGIN.top,
-          y2: VIEWBOX_HEIGHT - MARGIN.bottom,
-          stroke: color,
-          "stroke-width": 2,
-          "stroke-dasharray": "5,4",
+          y2: CHART_H - MARGIN.bottom,
+          stroke: accent,
+          "stroke-width": 1,
+          "stroke-dasharray": "3,3",
+          opacity: 0.85,
         })
       );
       svg.appendChild(
         svgEl("text", {
-          x: x + 4,
-          y: MARGIN.top + 10,
-          "font-size": 10,
-          fill: color,
-          "font-weight": 600,
+          x: x + 3,
+          y: MARGIN.top + 9,
+          "font-family": "IBM Plex Mono, monospace",
+          "font-size": 9.5,
+          fill: accent,
         })
-      ).textContent = `${cavity.target_hz.toFixed(0)} Hz`;
-    });
-  }
-
-  function renderLegend(frame) {
-    chartLegend.innerHTML = "";
-    const spectrumItem = document.createElement("span");
-    spectrumItem.className = "chart-legend__item";
-    spectrumItem.style.color = getComputedColor("--text-secondary", "#52514e");
-    spectrumItem.innerHTML = `<span class="chart-legend__swatch"></span> Incoming spectrum`;
-    chartLegend.appendChild(spectrumItem);
-
-    frame.cavities.forEach((cavity) => {
-      const item = document.createElement("span");
-      item.className = "chart-legend__item";
-      item.style.color = CAVITY_COLOR_HEX[cavity.id] || CAVITY_COLOR_HEX[1];
-      const targetLabel = cavity.target_hz != null ? `${cavity.target_hz.toFixed(0)} Hz` : "unset";
-      item.innerHTML = `<span class="chart-legend__swatch"></span> Cavity ${cavity.id} target (${targetLabel})`;
-      chartLegend.appendChild(item);
+      ).textContent = `c${cavity.id}`;
     });
   }
 
@@ -274,8 +227,8 @@
     }
     const rect = svg.getBoundingClientRect();
     const fractionX = (event.clientX - rect.left) / rect.width;
-    const viewBoxX = fractionX * VIEWBOX_WIDTH;
-    const plotWidth = VIEWBOX_WIDTH - MARGIN.left - MARGIN.right;
+    const viewBoxX = fractionX * CHART_W;
+    const plotWidth = CHART_W - MARGIN.left - MARGIN.right;
     const freqFraction = (viewBoxX - MARGIN.left) / plotWidth;
     if (freqFraction < 0 || freqFraction > 1) {
       tooltip.hidden = true;
@@ -292,7 +245,7 @@
     tooltip.hidden = false;
     tooltip.style.left = `${event.clientX - rect.left}px`;
     tooltip.style.top = `${event.clientY - rect.top}px`;
-    tooltip.textContent = `${(bin * binWidthHz).toFixed(1)} Hz — ${dbfs.toFixed(1)} dBFS`;
+    tooltip.textContent = `${(bin * binWidthHz).toFixed(0)}hz  ${dbfs.toFixed(1)}db`;
   }
 
   svg.addEventListener("mousemove", handlePointerMove);
@@ -302,11 +255,10 @@
 
   function applyFrame(frame) {
     updateConnectionStatus(frame.connected);
-    frame.cavities.forEach(updateCavityCard);
-    rmsReadout.textContent = frame.rms_dbfs != null ? `RMS: ${frame.rms_dbfs.toFixed(1)} dBFS` : "RMS: —";
+    renderAssembly(frame);
+    rmsReadout.textContent = frame.rms_dbfs != null ? `rms ${frame.rms_dbfs.toFixed(0)}db` : "rms —";
     latestSpectrum = frame.spectrum;
     renderChart(frame);
-    renderLegend(frame);
   }
 
   function connect() {
