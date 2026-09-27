@@ -12,6 +12,12 @@
   --housing: #dedcd3;
   --cell-hue: 250;
   --cell-sat: 30%;
+  /* Two fixed tones for the depth "fill gauge" inside each cavity cell —
+     pale for the empty portion, a touch more saturated for the filled
+     portion — instead of one flat color per cavity. Both stay in the same
+     light/pastel band already established (never a deep/saturated purple). */
+  --tone-empty: hsl(var(--cell-hue) 24% 90%);
+  --tone-filled: hsl(var(--cell-hue) 36% 64%);
 }
 
 * {
@@ -72,14 +78,16 @@ header {
   background: var(--bad);
 }
 
-/* --- Assembly tray: a flat digital recreation of the physical 2x2 pocket
-   block, one solid-color cell per cavity, matching the CAD's own light
-   lavender cavity material. Color is the only depth encoding, varied
-   within a narrow, always-light band (never a deep/saturated purple). --- */
+/* --- Assembly tray: a flat digital recreation of the physical 2-pocket
+   block (only 2 of the firmware's 4 servo slots have a real cavity wired
+   up right now — servo 1 / GPIO36 and servo 2 / GPIO37), one solid-color
+   cell per cavity, matching the CAD's own light lavender cavity material.
+   Color is the only depth encoding, varied within a narrow, always-light
+   band (never a deep/saturated purple). --- */
 
 .tray-wrap {
   position: relative;
-  max-width: 660px;
+  max-width: 480px;
   margin: 0 auto 60px;
   padding: 0 18px;
 }
@@ -89,10 +97,10 @@ header {
   left: 0;
   right: 0;
   top: 50%;
-  height: 18px;
+  height: 14px;
   transform: translateY(-50%);
   background: var(--housing);
-  border-radius: 9px;
+  border-radius: 7px;
   z-index: 0;
 }
 
@@ -101,9 +109,9 @@ header {
   z-index: 1;
   display: grid;
   grid-template-columns: 1fr 1fr;
-  grid-template-rows: 1fr 1fr;
-  gap: 18px 4px;
-  aspect-ratio: 16 / 9.5;
+  grid-template-rows: 1fr;
+  gap: 6px;
+  aspect-ratio: 2.15 / 1;
   background: var(--housing);
   border-radius: 8px;
   padding: 4px;
@@ -115,16 +123,10 @@ header {
   padding: 10px;
 }
 .cell:first-child {
-  border-radius: 5px 0 0 0;
+  border-radius: 5px 0 0 5px;
 }
 .cell:nth-child(2) {
-  border-radius: 0 5px 0 0;
-}
-.cell:nth-child(3) {
-  border-radius: 0 0 0 5px;
-}
-.cell:nth-child(4) {
-  border-radius: 0 0 5px 0;
+  border-radius: 0 5px 5px 0;
 }
 
 .cell__swatch {
@@ -135,11 +137,22 @@ header {
   justify-content: center;
   gap: 6px;
   border-radius: 5px;
-  background: var(--cell-fill, hsl(var(--cell-hue) var(--cell-sat) 78%));
+  /* Depth as a two-tone fill gauge: the boundary between the pale "empty"
+     tone (top) and the more saturated "filled" tone (bottom) sits at
+     --fill-pct, which JS sets to depth / max-travel — a hard stop, like a
+     liquid level, so the eye reads an actual fill amount rather than a
+     single flat tint shifting. */
+  background: linear-gradient(
+    to top,
+    var(--tone-filled) 0%,
+    var(--tone-filled) var(--fill-pct, 50%),
+    var(--tone-empty) var(--fill-pct, 50%),
+    var(--tone-empty) 100%
+  );
   color: #2a2a2e;
   text-align: center;
   border: 1px solid rgba(0, 0, 0, 0.14);
-  transition: background-color 0.2s ease-out;
+  transition: background 0.2s ease-out;
 }
 
 .cell__id {

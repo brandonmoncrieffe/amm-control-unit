@@ -15,7 +15,7 @@ extern "C" {
 #define SERVO_DEFAULT_CENTER_OFFSET_US 0
 #define SERVO_DEFAULT_MIN_ANGLE_DEG 0
 #define SERVO_DEFAULT_MAX_ANGLE_DEG 180
-#define SERVO_DEFAULT_INITIAL_ANGLE_DEG 0
+#define SERVO_DEFAULT_INITIAL_ANGLE_DEG 180
 
 /**
  * Default SG90 calibration. These pulse widths are starting points only and

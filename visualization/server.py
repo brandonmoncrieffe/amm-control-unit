@@ -25,6 +25,10 @@ logger = logging.getLogger("visualization")
 
 POLL_INTERVAL_SECONDS = 0.1
 SERVO_COUNT = 4
+# Only 2 of the firmware's 4 servo slots have a real cavity/piston wired up
+# right now: servo 1 (GPIO36) and servo 2 (GPIO37). Kept in sync with
+# REAL_CAVITY_IDS in visualization/static/app.js and visualization/autotune.py.
+REAL_CAVITY_IDS = [1, 2]
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
 app = FastAPI()
@@ -129,11 +133,12 @@ def main() -> None:
     args = parse_args()
     _esp32_client = Esp32Client(args.esp32_host)
     _calibrations = load_calibrations(SERVO_COUNT)
-    if len(_calibrations) < SERVO_COUNT:
-        missing = sorted(set(range(1, SERVO_COUNT + 1)) - _calibrations.keys())
+    missing = sorted(set(REAL_CAVITY_IDS) - _calibrations.keys())
+    if missing:
         logger.warning(
-            "No calibration data for servo(s) %s — depth will show as raw angle "
-            "until calibration/servo_N.csv exists. See tools/servo_calibration.py.",
+            "No calibration data for the real cavity/cavities %s — depth will "
+            "show as raw angle until calibration/servo_N.csv exists. See "
+            "tools/servo_calibration.py.",
             missing,
         )
 

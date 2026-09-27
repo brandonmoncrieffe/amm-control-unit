@@ -70,7 +70,8 @@ values indicate reduced target-band energy relative to that baseline.
 Servo commands can be entered in the same terminal while the plot is open.
 The set, all, and center commands are forwarded to the ESP32 and annotated on
 the plot. Opening the serial port can reset the ESP32 and move every servo to
-its configured 0-degree startup angle.
+its configured startup position (servo 2 at 0 degrees and the others at 180
+degrees).
 
 ## Experimental controls
 
@@ -89,3 +90,16 @@ movement transients as acoustic suppression.
 
 No microphone-to-SPL calibration, transfer function, automatic frequency
 response, or automatic servo control is implemented.
+
+## Two-position demonstration
+
+`demo 1` commands calibrated servos 1 and 2 to 0 mm, waits 1.5 seconds for
+settling, and captures eight fresh FFT-block measurements. It averages the 73
+Hz and 145 Hz target bands in linear power and stores the result in RAM as the
+baseline.
+
+`demo 2` requires that baseline, commands servo 1 to 23 mm and servo 2 to 6.5
+mm, repeats the same measurement, and prints baseline, demo, and drop values.
+Drop is `baseline dBFS - demo dBFS`, so positive values indicate measured
+suppression. All values remain relative dBFS, not calibrated dB SPL. Resetting
+the board clears the stored baseline, so `demo 1` must be run again.

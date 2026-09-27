@@ -194,7 +194,8 @@ def print_safety_summary(args: argparse.Namespace, port: str) -> None:
         "  - Use an external regulated 5 V servo supply and common ground.\n"
         "  - Verify this angle range cannot jam the linkage or hit a hard stop.\n"
         "  - Be ready to disconnect servo power if the mechanism binds.\n"
-        "  - Connecting may reset the board; its configured startup angle is 0 degrees.\n"
+        "  - Connecting may reset the board; servo 2 starts at 0 degrees and "
+        "the others at 180 degrees.\n"
     )
 
 
@@ -290,6 +291,7 @@ def main() -> int:
 
     print(f"Saved {completed} measurement(s) to {args.output}")
     print("The servo was left at its last commanded angle.")
+    print("Rebuild and flash the firmware to embed updated calibration data.")
     return 0
 
 

@@ -63,6 +63,7 @@ Octal flash or Octal PSRAM, because those pins are part of that memory bus.
 - Power distribution, decoupling, protection, and connector details: TBD.
 
 Review power wiring, supply capacity, and servo calibration before commanding
-the full travel range. Firmware startup commands all four servos to 0 degrees;
+the full travel range. Firmware startup commands servo 2 to 0 degrees and the
+other three servos to 180 degrees;
 verify the calibrated minimum pulse does not drive any servo into its mechanical
 stop.
