@@ -13,10 +13,11 @@
   // cavity has no calibration CSV yet and its own max_depth_mm is unknown.
   const FALLBACK_MAX_DEPTH_MM = 29.5;
 
-  // Fixed 2x2 grid positions, matching the physical block's pocket layout
-  // (top-left, top-right, bottom-left, bottom-right). Servo-id-to-corner
-  // mapping is a placeholder until the real assembly wiring is confirmed.
-  const CELL_ORDER = [1, 2, 3, 4];
+  // Only 2 of the firmware's 4 servo slots have a real cavity/piston wired
+  // up right now: servo 1 (GPIO36) and servo 2 (GPIO37). Servos 3 and 4
+  // exist in the firmware config but aren't attached to anything physical,
+  // so they're intentionally not rendered here or drawn on the chart below.
+  const REAL_CAVITY_IDS = [1, 2];
 
   const assembly = document.getElementById("assembly");
   const connectionStatus = document.getElementById("connection-status");
@@ -84,7 +85,7 @@
 
   function renderAssembly(frame) {
     const byId = new Map(frame.cavities.map((cavity) => [cavity.id, cavity]));
-    CELL_ORDER.forEach((id) => {
+    REAL_CAVITY_IDS.forEach((id) => {
       const cavity = byId.get(id);
       if (cavity) {
         updateCavityCell(cavity);
@@ -188,6 +189,9 @@
     }
 
     frame.cavities.forEach((cavity) => {
+      if (!REAL_CAVITY_IDS.includes(cavity.id)) {
+        return;
+      }
       if (cavity.target_hz == null || cavity.target_hz > CHART_MAX_HZ) {
         return;
       }
