@@ -1,0 +1,29 @@
+menu "AMM Control Unit"
+
+    config AMM_WIFI_AP_SSID
+        string "Status dashboard WiFi access point SSID"
+        default "amm-control-unit"
+        help
+            Name of the WiFi network the ESP32 hosts for the status
+            dashboard. Join this network from the machine running the
+            visualization app.
+
+    config AMM_WIFI_AP_PASSWORD
+        string "Status dashboard WiFi access point password"
+        default "amm-cavity-tuning"
+        help
+            WPA2 password for the status dashboard access point. Must be at
+            least 8 characters. This value lives only in the local,
+            gitignored sdkconfig, not in tracked source.
+
+    config AMM_WIFI_AP_CHANNEL
+        int "Status dashboard WiFi access point channel"
+        range 1 13
+        default 6
+
+    config AMM_WIFI_AP_MAX_CONNECTIONS
+        int "Maximum simultaneous status dashboard WiFi clients"
+        range 1 4
+        default 2
+
+endmenu

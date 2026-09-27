@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>AMM Control Unit — Live Status</title>
+<link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <div class="viz-root">
+    <header class="page-header">
+      <h1>AMM Control Unit</h1>
+      <div id="connection-status" class="status-pill status-pill--unknown">
+        <span class="status-dot"></span>
+        <span class="status-text">Connecting…</span>
+      </div>
+    </header>
+
+    <section class="cavity-grid" id="cavity-grid" aria-label="Cavity status">
+      <!-- 4 cavity panels are rendered by app.js -->
+    </section>
+
+    <section class="chart-section" aria-label="Live acoustic spectrum">
+      <div class="chart-header">
+        <h2>Incoming spectrum vs. blocked frequencies</h2>
+        <span class="rms-readout" id="rms-readout">RMS: —</span>
+      </div>
+      <div class="chart-wrap">
+        <svg id="spectrum-chart" viewBox="0 0 960 360" preserveAspectRatio="none"></svg>
+        <div id="chart-tooltip" class="chart-tooltip" hidden></div>
+      </div>
+      <div class="chart-legend" id="chart-legend"></div>
+    </section>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

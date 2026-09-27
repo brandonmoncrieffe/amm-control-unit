@@ -29,11 +29,23 @@ contains GPIO, minimum and maximum pulse width, center offset, permitted angle
 range, and initial angle. The default 500/1500/2500 microsecond calibration
 must be adjusted for the physical servos and mechanism.
 
+### wifi_status_server (implemented)
+
+Owns a WiFi access point (`esp_wifi` AP mode) and an `esp_http_server`
+exposing two read-only JSON endpoints, `GET /state` and `GET /spectrum`, for
+the host-side live dashboard (see [`docs/visualization.md`](visualization.md)).
+It only calls `servo_control`'s and `audio_processing`'s existing public
+getters — it never commands a servo or configures audio acquisition — and is
+independent of the USB Serial/JTAG console, so both can run at once.
+SSID/password/channel are `Kconfig` options (`main/Kconfig.projbuild`), kept
+out of tracked source in the gitignored `sdkconfig`.
+
 ### app / main
 
 main supplies board-specific audio and servo configuration, initializes the
-servos at 0 degrees, and registers all console commands. It formats the compact
-stream records without coupling audio processing to servo commands.
+servos at 0 degrees, starts the WiFi status server, and registers all console
+commands. It formats the compact stream records without coupling audio
+processing to servo commands.
 
 ## Configuration
 
@@ -50,3 +62,8 @@ Current configuration includes:
 Audio processing never commands a servo. A future coordination layer may use
 the measurements and a separately defined transfer function, but neither
 automatic servo response nor that transfer function exists yet.
+
+The WiFi status dashboard access point's SSID, password, channel, and maximum
+client count are `Kconfig` options under "AMM Control Unit" (`idf.py
+menuconfig`), defaulting to SSID `amm-control-unit`. The default AP gateway
+address is `192.168.4.1`.

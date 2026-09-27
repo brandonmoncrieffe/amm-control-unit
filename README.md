@@ -120,6 +120,27 @@ baseline start, baseline stop, servo commands such as set 1 30, and quit.
 Opening the serial port may reset the board and command the servos to their
 configured 0-degree startup position.
 
+## Live web dashboard
+
+The ESP32 also hosts its own WiFi access point (default SSID
+`amm-control-unit`, password set via `idf.py menuconfig` under "AMM Control
+Unit") and a read-only HTTP status API (`GET /state`, `GET /spectrum`),
+independent of the USB serial console — both can run at the same time. A
+Python dashboard polls that API and renders the 4 cavities plus a live
+spectrum chart in a browser:
+
+```sh
+python3 -m venv .venv
+source .venv/bin/activate
+python3 -m pip install -r visualization/requirements.txt
+python3 -m visualization.server
+```
+
+Join the ESP32's access point first, then open `http://127.0.0.1:8000`. See
+[`docs/visualization.md`](docs/visualization.md) for details, including how
+depth is shown before a servo has been calibrated. This dashboard is
+read-only; it does not send servo commands.
+
 ## Servo calibration
 
 Per-servo calibration is defined in `SERVO_CONFIG` in `main/main.c`. The
@@ -150,5 +171,6 @@ Hardware decisions and the planned software modules are recorded in
 [`docs/hardware.md`](docs/hardware.md) and
 [`docs/software-architecture.md`](docs/software-architecture.md). Walkthroughs
 are available for
-[`servo control`](docs/servo-control.md) and the
-[`live acoustic demo`](docs/acoustic-demo.md).
+[`servo control`](docs/servo-control.md), the
+[`live acoustic demo`](docs/acoustic-demo.md), and the
+[`live web dashboard`](docs/visualization.md).
