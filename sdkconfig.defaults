@@ -1,0 +1,6 @@
+# The connected development hardware was detected as an ESP32-S3.
+CONFIG_IDF_TARGET="esp32s3"
+
+# Use the board's native USB Serial/JTAG connection for the interactive console.
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
+CONFIG_ESP_CONSOLE_SECONDARY_NONE=y

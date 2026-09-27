@@ -1,0 +1,37 @@
+# ESP-IDF build output
+build/
+build-*/
+compile_commands.json
+
+# Generated ESP-IDF configuration
+sdkconfig
+sdkconfig.old
+sdkconfig.*
+!sdkconfig.defaults
+!sdkconfig.defaults.*
+
+# ESP-IDF Component Manager output
+managed_components/
+dependencies.lock
+
+# VS Code and workspace-local settings
+.vscode/
+*.code-workspace
+
+# Local environment and tool configuration
+.env
+.env.*
+!.env.example
+.idea/
+
+# Python host tools
+__pycache__/
+*.py[cod]
+.venv/
+
+# Operating system and editor artifacts
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
