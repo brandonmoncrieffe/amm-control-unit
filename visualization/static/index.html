@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>AMM Control Unit</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500&display=swap" />
+<link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <div class="page">
+    <header>
+      <span class="eyebrow">amm control unit — cavity status</span>
+      <span class="status" id="connection-status"><span class="status__dot"></span><span class="status-text">connecting</span></span>
+    </header>
+
+    <div class="tray-wrap">
+      <span class="duct"></span>
+      <div class="tray" id="assembly" aria-label="Cavity status"></div>
+    </div>
+
+    <section aria-label="Live acoustic spectrum">
+      <div class="chart__head">
+        <span class="eyebrow">incoming spectrum</span>
+        <span class="rms-readout" id="rms-readout">rms —</span>
+      </div>
+      <div class="chart-wrap">
+        <svg id="spectrum-chart" viewBox="0 0 680 220"></svg>
+        <div id="chart-tooltip" class="chart-tooltip" hidden></div>
+      </div>
+    </section>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

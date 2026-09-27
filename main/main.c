@@ -16,6 +16,7 @@
 #include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "servo_control.h"
+#include "wifi_status_server.h"
 
 static const char *TAG = "amm_control_unit";
 
@@ -351,6 +352,17 @@ void app_main(void)
     ESP_ERROR_CHECK(servo_init(&SERVO_CONFIG));
     ESP_ERROR_CHECK(audio_processing_init(&AUDIO_CONFIG,
                                           audio_measurement_callback, NULL));
+
+    wifi_status_server_config_t wifi_status_config;
+    for (size_t index = 0; index < WIFI_STATUS_SERVER_SERVO_COUNT; ++index) {
+        wifi_status_config.servo_gpio[index] =
+            SERVO_CONFIG.servos[index].gpio_num;
+    }
+    memcpy(wifi_status_config.target_frequency_hz,
+           AUDIO_CONFIG.target_frequency_hz,
+           sizeof(wifi_status_config.target_frequency_hz));
+    ESP_ERROR_CHECK(wifi_status_server_init(&wifi_status_config));
+
     register_console_commands();
     start_console();
 }

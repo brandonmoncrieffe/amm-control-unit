@@ -1,0 +1,212 @@
+/* Deliberately single-theme (light only) — the physical assembly's own
+   material colors don't change with the viewer's OS setting. */
+:root {
+  color-scheme: light;
+  --bg: #faf9f7;
+  --ink: #23262b;
+  --ink-muted: #6d7178;
+  --ink-faint: #b7b9be;
+  --accent: #8d7cc9;
+  --good: #1a9e63;
+  --bad: #d1495b;
+  --housing: #dedcd3;
+  --cell-hue: 250;
+  --cell-sat: 30%;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: "IBM Plex Sans", Arial, sans-serif;
+}
+
+.page {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 40px 24px 64px;
+}
+
+header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 44px;
+}
+
+.eyebrow {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.14em;
+  color: var(--ink-muted);
+  text-transform: uppercase;
+}
+
+.status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--ink-muted);
+}
+
+.status__dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--ink-faint);
+}
+
+.status--connected .status__dot {
+  background: var(--good);
+}
+
+.status--disconnected .status__dot {
+  background: var(--bad);
+}
+
+/* --- Assembly tray: a flat digital recreation of the physical 2x2 pocket
+   block, one solid-color cell per cavity, matching the CAD's own light
+   lavender cavity material. Color is the only depth encoding, varied
+   within a narrow, always-light band (never a deep/saturated purple). --- */
+
+.tray-wrap {
+  position: relative;
+  max-width: 660px;
+  margin: 0 auto 60px;
+  padding: 0 18px;
+}
+
+.duct {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 18px;
+  transform: translateY(-50%);
+  background: var(--housing);
+  border-radius: 9px;
+  z-index: 0;
+}
+
+.tray {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  gap: 18px 4px;
+  aspect-ratio: 16 / 9.5;
+  background: var(--housing);
+  border-radius: 8px;
+  padding: 4px;
+}
+
+.cell {
+  display: flex;
+  background: var(--housing);
+  padding: 10px;
+}
+.cell:first-child {
+  border-radius: 5px 0 0 0;
+}
+.cell:nth-child(2) {
+  border-radius: 0 5px 0 0;
+}
+.cell:nth-child(3) {
+  border-radius: 0 0 0 5px;
+}
+.cell:nth-child(4) {
+  border-radius: 0 0 5px 0;
+}
+
+.cell__swatch {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border-radius: 5px;
+  background: var(--cell-fill, hsl(var(--cell-hue) var(--cell-sat) 78%));
+  color: #2a2a2e;
+  text-align: center;
+  border: 1px solid rgba(0, 0, 0, 0.14);
+  transition: background-color 0.2s ease-out;
+}
+
+.cell__id {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 8.5px;
+  letter-spacing: 0.08em;
+  opacity: 0.6;
+}
+
+.cell__depth {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-weight: 400;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.cell__depth-unit {
+  font-size: 9px;
+  opacity: 0.65;
+  margin-left: 2px;
+}
+
+.cell__meta {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 8.5px;
+  opacity: 0.7;
+}
+
+/* --- Spectrum chart --- */
+
+.chart__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.rms-readout {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 11px;
+  color: var(--ink-muted);
+}
+
+.chart-wrap {
+  position: relative;
+}
+
+#spectrum-chart {
+  width: 100%;
+  height: auto;
+  display: block;
+  overflow: visible;
+}
+
+.chart-tooltip {
+  position: absolute;
+  pointer-events: none;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 10.5px;
+  color: var(--ink);
+  background: var(--bg);
+  border: 1px solid var(--ink-faint);
+  padding: 3px 6px;
+  border-radius: 2px;
+  transform: translate(-50%, -130%);
+  white-space: nowrap;
+}
