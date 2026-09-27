@@ -530,7 +530,8 @@ def main() -> int:
 
     print(
         "WARNING: Opening the serial port may reset the ESP32 and command all "
-        "servos to their configured 0-degree startup position.\n"
+        "servos to their configured startup positions (servo 2 at 0 degrees, "
+        "the others at 180 degrees).\n"
         "Close idf.py monitor before continuing."
     )
 

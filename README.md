@@ -75,6 +75,9 @@ set <servo 1-4> <angle>
 all <angle>
 center
 status
+length <servo 1-4> <millimetres>
+lengthstatus
+demo <1|2>
 stream <on|off>
 level
 spectrum
@@ -88,10 +91,27 @@ set 1 0
 set 1 90
 set 4 180
 all 90
+length 1 12
+lengthstatus
+demo 1
+demo 2
 ```
 
 Requested angles are clamped first to 0–180 degrees and then to each servo's
 configured permitted range.
+
+Length commands are available only for servos with a valid
+`calibration/servo_N.csv` at build time. Requested lengths are converted to
+angles with piecewise-linear interpolation and clamped to the measured range.
+The original angle commands remain available independently.
+
+`demo 1` returns servos 1 and 2 to their original 0 mm positions, waits 1.5
+seconds, and records an eight-block baseline for the 73 Hz and 145 Hz target
+bands. `demo 2` requires that in-memory baseline, moves servo 1 to 23 mm and
+servo 2 to 6.5 mm, repeats the measurement, and reports
+`baseline dBFS - demo dBFS`; a positive result means suppression. Each average
+is calculated in linear power before conversion back to relative dBFS. Servos
+3 and 4 are left unchanged.
 
 Audio acquisition and FFT processing run continuously. The stream-on command
 enables compact target-band records at approximately 7.8 updates per second;
@@ -118,7 +138,8 @@ python3 tools/live_spectrum.py --port /dev/cu.usbmodem1101
 The plotter automatically enables streaming. Its terminal accepts
 baseline start, baseline stop, servo commands such as set 1 30, and quit.
 Opening the serial port may reset the board and command the servos to their
-configured 0-degree startup position.
+configured startup positions: servo 2 to 0 degrees and the others to 180
+degrees.
 
 ## Live web dashboard
 
@@ -145,8 +166,10 @@ read-only; it does not send servo commands.
 
 Per-servo calibration is defined in `SERVO_CONFIG` in `main/main.c`. The
 initial defaults are 500 microseconds at 0 degrees, 1500 microseconds at 90
-degrees, and 2500 microseconds at 180 degrees, with a startup angle of 0
-degrees. These are starting values only. Calibrate minimum/maximum pulse width,
+degrees, and 2500 microseconds at 180 degrees. Servo 2 starts at 0 degrees and
+is limited to 160 degrees because its mechanism plateaus there; the other
+servos start at 180 degrees. These are starting values only. Calibrate
+minimum/maximum pulse width,
 center offset, and permitted angles for each physical servo and mechanism
 before exercising the full range.
 
@@ -157,7 +180,7 @@ interactive calibration assistant after flashing the firmware:
 python3 -m venv .venv
 source .venv/bin/activate
 python3 -m pip install -r tools/requirements.txt
-python3 tools/servo_calibration.py --servo 1 --start-angle 0 --end-angle 30 --step 3
+python3 tools/servo_calibration.py --servo 1 --start-angle 180 --end-angle 0 --step 40
 ```
 
 Close `idf.py monitor` before starting the assistant because only one program
@@ -165,7 +188,9 @@ can own the serial port. The assistant requires a typed safety confirmation,
 commands one angle at a time, asks you to enter the measured mechanism travel
 in millimetres, and writes a CSV file under `calibration/`. Start with a small,
 known-safe angle range rather than assuming the complete 0–180 degree range is
-mechanically safe.
+mechanically safe. After reviewing a CSV, rebuild and flash the firmware to
+embed it. Missing servo CSVs are allowed; only those servos remain unavailable
+to the `length` command.
 
 Hardware decisions and the planned software modules are recorded in
 [`docs/hardware.md`](docs/hardware.md) and

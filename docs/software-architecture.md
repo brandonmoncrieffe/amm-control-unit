@@ -29,6 +29,18 @@ contains GPIO, minimum and maximum pulse width, center offset, permitted angle
 range, and initial angle. The default 500/1500/2500 microsecond calibration
 must be adjusted for the physical servos and mechanism.
 
+### linear_actuator (implemented)
+
+Owns the optional per-servo millimetre-to-angle mapping. Its build generator
+discovers available mechanism CSVs, validates their outward sweeps, and emits
+piecewise-linear tables into the build directory. A missing CSV leaves that
+servo uncalibrated without affecting its angle controls; an invalid existing
+CSV fails configuration.
+
+Length commands clamp to the measured range, interpolate an angle, and call
+the unchanged servo_control API. The layer moves directly and provides only
+open-loop length estimates.
+
 ### wifi_status_server (implemented)
 
 Owns a WiFi access point (`esp_wifi` AP mode) and an `esp_http_server`
@@ -43,9 +55,9 @@ out of tracked source in the gitignored `sdkconfig`.
 ### app / main
 
 main supplies board-specific audio and servo configuration, initializes the
-servos at 0 degrees, starts the WiFi status server, and registers all console
-commands. It formats the compact stream records without coupling audio
-processing to servo commands.
+servos at their per-servo startup angles, starts the WiFi status server, and
+registers the angle, length, demo, and audio console commands. It formats the
+compact stream records without coupling audio processing to servo commands.
 
 ## Configuration
 
@@ -58,6 +70,9 @@ Current configuration includes:
 - Servo signal GPIOs 36, 37, 38, and 39.
 - Per-servo safe pulse-width limits, center offset, permitted angles, and
   startup angle.
+- Two-stage demo measurement: stage 1 records an original-position baseline;
+  stage 2 applies 23 mm to servo 1 and 6.5 mm to servo 2 and reports the first
+  two target-band reductions. Servos 3 and 4 remain unchanged.
 
 Audio processing never commands a servo. A future coordination layer may use
 the measurements and a separately defined transfer function, but neither
